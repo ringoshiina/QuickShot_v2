@@ -1204,10 +1204,10 @@ async function autoCaptureLoop(tabId) {
         stuckCount++;
         console.log(`[QuickShot] Detected stuck at index ${context.current}. Count: ${stuckCount}`);
 
-        // Safety break only if stuck for a long time (e.g. 5 loops), 
+        // Safety break only if stuck for a long time (e.g. 25 loops), 
         // assuming we are in an infinite loop with a broken button.
-        if (stuckCount >= 5) {
-          console.log(`[QuickShot] Stuck for 5 loops. Safety stop.`);
+        if (stuckCount >= 25) {
+          console.log(`[QuickShot] Stuck for 25 loops. Safety stop.`);
           isLast = true;
         }
       } else if (context.current < lastContext.current) {
