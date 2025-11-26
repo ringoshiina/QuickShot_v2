@@ -1,5 +1,6 @@
 const DEFAULT_SETTINGS = Object.freeze({
   outputRoot: "F24",
+  captureDelay: 2500,
 });
 const RATIO_PATTERN = /(\d+)\s*[/／]\s*(\d+)/;
 const INDEX_HINT_PATTERN = /(?:序号|当前|index|sequence)/i;
@@ -53,6 +54,7 @@ function readSettingsFromStorage() {
       }
       resolve({
         outputRoot: sanitizeOutputRoot(items.outputRoot),
+        captureDelay: Number.parseInt(items.captureDelay, 10) || 2500,
       });
     });
   });
@@ -1264,8 +1266,10 @@ async function autoCaptureLoop(tabId) {
       break;
     }
 
-    console.log(`[QuickShot] Waiting 1.5s for load...`);
-    await sleep(1500);
+    console.log(`[QuickShot] Waiting for load...`);
+    const settings = await getSettings();
+    const delay = settings.captureDelay || 2500;
+    await sleep(delay);
   }
   console.log(`[QuickShot] Completed! Captured ${imageCount} images.`);
 }

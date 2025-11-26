@@ -1,4 +1,5 @@
 const DEFAULT_OUTPUT_ROOT = "F24";
+const DEFAULT_CAPTURE_DELAY = 2500;
 const INVALID_SEGMENT_CHARS = /[<>:"\\/|?*\r\n]+/g;
 
 function sanitizeRootInput(raw) {
@@ -28,28 +29,38 @@ function showStatus(element, message, isError = false) {
 
 document.addEventListener("DOMContentLoaded", () => {
   const rootInput = document.getElementById("output-root");
+  const delayInput = document.getElementById("capture-delay");
   const statusEl = document.getElementById("status");
   const form = document.getElementById("settings-form");
   const shortcutsBtn = document.getElementById("open-shortcuts");
   const openOptionsBtn = document.getElementById("open-options");
 
-  chrome.storage.sync.get({ outputRoot: DEFAULT_OUTPUT_ROOT }, (items) => {
+  chrome.storage.sync.get({ outputRoot: DEFAULT_OUTPUT_ROOT, captureDelay: DEFAULT_CAPTURE_DELAY }, (items) => {
     if (chrome.runtime.lastError) {
       showStatus(statusEl, "读取设置失败", true);
       return;
     }
     rootInput.value = sanitizeRootInput(items.outputRoot || DEFAULT_OUTPUT_ROOT);
+    if (delayInput) {
+      delayInput.value = items.captureDelay || DEFAULT_CAPTURE_DELAY;
+    }
   });
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     const sanitized = sanitizeRootInput(rootInput.value);
-    chrome.storage.sync.set({ outputRoot: sanitized }, () => {
+    let delay = parseInt(delayInput.value, 10);
+    if (Number.isNaN(delay) || delay < 500) {
+      delay = DEFAULT_CAPTURE_DELAY;
+    }
+
+    chrome.storage.sync.set({ outputRoot: sanitized, captureDelay: delay }, () => {
       if (chrome.runtime.lastError) {
         showStatus(statusEl, "保存失败：" + chrome.runtime.lastError.message, true);
         return;
       }
       rootInput.value = sanitized;
+      delayInput.value = delay;
       showStatus(statusEl, "设置已保存");
       setTimeout(() => showStatus(statusEl, ""), 2500);
     });
