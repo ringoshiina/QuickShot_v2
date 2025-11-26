@@ -85,33 +85,17 @@ async function runCapture(tabId) {
 
 
   try {
-
-
-
+    console.log("[QuickShot] Step 1: Getting context...");
     const ctxEntry = await getCaptureContext(tabId);
-
-
+    console.log("[QuickShot] Step 1: Done.");
 
     if (!ctxEntry) {
-
-
-
       toast("未识别到项目/地块编号或当前序号（1/N），请确认位于举证照片的大图查看器");
-
-
-
       return;
-
-
-
     }
 
-
-
     const { context, frameId } = ctxEntry;
-
     const { parcelId, projectId } = context;
-
     const settings = await getSettings();
 
     const derivedSequence = resolveSequence(context);
@@ -132,16 +116,20 @@ async function runCapture(tabId) {
     const outputRoot = settings.outputRoot || DEFAULT_SETTINGS.outputRoot;
     const filename = `${outputRoot}/${folder}/${baseName}.png`;
 
+    // Step 2: Ensure "All Azimuths" checkbox is checked
+    console.log("[QuickShot] Step 2: Checking 'All Azimuths' checkbox...");
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: ensureAllAzimuthsChecked,
+    });
+    console.log("[QuickShot] Step 2: Done.");
 
-
+    console.log("[QuickShot] Step 3: Attaching debugger...");
     await attachDebugger(tabId);
-
-
-
     debuggerAttached = true;
+    console.log("[QuickShot] Step 3: Done.");
 
-
-
+    console.log("[QuickShot] Step 4: Capturing screenshot...");
     const screenshot = await captureScreenshotWithRetry(tabId);
 
 
@@ -1116,4 +1104,30 @@ function scrapeContext() {
     }
     return 0;
   }
+}
+
+function ensureAllAzimuthsChecked() {
+  // Find the label containing "全部方位角"
+  const labels = Array.from(document.querySelectorAll('.el-checkbox__label'));
+  const targetLabel = labels.find(el => el.textContent.trim().includes('全部方位角'));
+
+  if (targetLabel) {
+    const checkbox = targetLabel.closest('.el-checkbox');
+    if (checkbox) {
+      const isChecked = checkbox.classList.contains('is-checked') ||
+        checkbox.querySelector('.is-checked') ||
+        checkbox.querySelector('input:checked');
+
+      if (!isChecked) {
+        console.log("[QuickShot] 'All Azimuths' not checked. Clicking it now.");
+        checkbox.click();
+        return true;
+      } else {
+        console.log("[QuickShot] 'All Azimuths' is already checked.");
+      }
+    }
+  } else {
+    console.warn("[QuickShot] Could not find 'All Azimuths' checkbox.");
+  }
+  return false;
 }
