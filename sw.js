@@ -1199,62 +1199,75 @@ async function autoCaptureLoop(tabId) {
       }
     }
 
-    // Stuck detection: If current index hasn't changed, we are likely done or stuck
-    // However, we might be tracking the wrong counter (e.g. Parcel count instead of Image count).
-    // So we should NOT stop immediately if the button is still enabled.
+    if (lastContext && context && context.current && lastContext.current) {
+      if (context.current === lastContext.current) {
+        stuckCount++;
+        console.log(`[QuickShot] Detected stuck at index ${context.current}. Count: ${stuckCount}`);
+
+        // Safety break only if stuck for a long time (e.g. 5 loops), 
+        // assuming we are in an infinite loop with a broken button.
+        if (stuckCount >= 5) {
+          console.log(`[QuickShot] Stuck for 5 loops. Safety stop.`);
+          isLast = true;
+        }
+      } else if (context.current < lastContext.current) {
+        console.log(`[QuickShot] Detected index wrap-around ${lastContext.current} -> ${context.current}. Stopping.`);
+        isLast = true;
+      } else {
+        stuckCount = 0; // Reset if we moved forward
+      }
+    } else {
+      stuckCount = 0;
+    }
+    lastContext = context;
+
+    // Priority 2: Fallback to DOM check if context is inconclusive and not already flagged as last
+    if (!isLast && !usedContext) {
+      const lastResults = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: checkIfLastImage,
+      });
+      isLast = lastResults.some(r => r.result === true);
+      console.log(`[QuickShot] DOM check Is last?`, isLast);
+    }
+
+    if (isLast) {
+      console.log("[QuickShot] Reached last image!");
+      break;
+    }
+
+    console.log(`[QuickShot] Clicking next...`);
+    const clickResults = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: clickNextButton,
+    });
+
+    // Check if any frame clicked a button
+    const clickResult = clickResults.find(r => r.result && r.result !== "none")?.result || "none";
+    console.log(`[QuickShot] Click result:`, clickResult);
+
+    if (clickResult === "none") {
+      console.warn("[QuickShot] Could not find next button in any frame.");
+      break;
+    }
+
+    console.log(`[QuickShot] Waiting 1s for toast check...`);
+    await sleep(1000);
+
+    const toastResults = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: checkForLastImageToast,
+    });
+    const toastDetected = toastResults.some(r => r.result === true);
+    if (toastDetected) {
+      console.log("[QuickShot] Detected 'Already last image' toast. Stopping.");
+      break;
+    }
+
+    console.log(`[QuickShot] Waiting 1.5s for load...`);
+    await sleep(1500);
   }
-} else {
-  stuckCount = 0;
-}
-lastContext = context;
-
-// Priority 2: Fallback to DOM check if context is inconclusive and not already flagged as last
-if (!isLast && !usedContext) {
-  const lastResults = await chrome.scripting.executeScript({
-    target: { tabId, allFrames: true },
-    func: checkIfLastImage,
-  });
-  isLast = lastResults.some(r => r.result === true);
-  console.log(`[QuickShot] DOM check Is last?`, isLast);
-}
-
-if (isLast) {
-  console.log("[QuickShot] Reached last image!");
-  break;
-}
-
-console.log(`[QuickShot] Clicking next...`);
-const clickResults = await chrome.scripting.executeScript({
-  target: { tabId, allFrames: true },
-  func: clickNextButton,
-});
-
-// Check if any frame clicked a button
-const clickResult = clickResults.find(r => r.result && r.result !== "none")?.result || "none";
-console.log(`[QuickShot] Click result:`, clickResult);
-
-if (clickResult === "none") {
-  console.warn("[QuickShot] Could not find next button in any frame.");
-  break;
-}
-
-console.log(`[QuickShot] Waiting 1s for toast check...`);
-await sleep(1000);
-
-const toastResults = await chrome.scripting.executeScript({
-  target: { tabId, allFrames: true },
-  func: checkForLastImageToast,
-});
-const toastDetected = toastResults.some(r => r.result === true);
-if (toastDetected) {
-  console.log("[QuickShot] Detected 'Already last image' toast. Stopping.");
-  break;
-}
-
-console.log(`[QuickShot] Waiting 1.5s for load...`);
-await sleep(1500);
-  }
-console.log(`[QuickShot] Completed! Captured ${imageCount} images.`);
+  console.log(`[QuickShot] Completed! Captured ${imageCount} images.`);
 }
 
 function checkForLastImageToast() {
