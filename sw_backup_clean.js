@@ -9,30 +9,10 @@ const BLANK_RETRY_LIMIT = 3;
 const BLANK_RETRY_DELAY = 700;
 const BLANK_THRESHOLD = 0.94;
 let settingsCache = null;
-let isAutoCapturing = false;
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "sync" && ("outputRoot" in changes)) {
     settingsCache = null;
-  }
-});
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "getAutoCaptureStatus") {
-    sendResponse({ isAutoCapturing });
-    return true;
-  }
-  if (request.action === "startAutoCapture") {
-    if (request.tabId) {
-      startAutoCapture(request.tabId);
-      sendResponse({ success: true });
-    }
-    return true;
-  }
-  if (request.action === "stopAutoCapture") {
-    stopAutoCapture();
-    sendResponse({ success: true });
-    return true;
   }
 });
 
@@ -105,17 +85,33 @@ async function runCapture(tabId) {
 
 
   try {
-    console.log("[QuickShot] Step 1: Getting context...");
+
+
+
     const ctxEntry = await getCaptureContext(tabId);
-    console.log("[QuickShot] Step 1: Done.");
+
+
 
     if (!ctxEntry) {
+
+
+
       toast("未识别到项目/地块编号或当前序号（1/N），请确认位于举证照片的大图查看器");
+
+
+
       return;
+
+
+
     }
 
+
+
     const { context, frameId } = ctxEntry;
+
     const { parcelId, projectId } = context;
+
     const settings = await getSettings();
 
     const derivedSequence = resolveSequence(context);
@@ -136,20 +132,16 @@ async function runCapture(tabId) {
     const outputRoot = settings.outputRoot || DEFAULT_SETTINGS.outputRoot;
     const filename = `${outputRoot}/${folder}/${baseName}.png`;
 
-    // Step 2: Ensure "All Azimuths" checkbox is checked
-    console.log("[QuickShot] Step 2: Checking 'All Azimuths' checkbox...");
-    await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      func: ensureAllAzimuthsChecked,
-    });
-    console.log("[QuickShot] Step 2: Done.");
 
-    console.log("[QuickShot] Step 3: Attaching debugger...");
+
     await attachDebugger(tabId);
-    debuggerAttached = true;
-    console.log("[QuickShot] Step 3: Done.");
 
-    console.log("[QuickShot] Step 4: Capturing screenshot...");
+
+
+    debuggerAttached = true;
+
+
+
     const screenshot = await captureScreenshotWithRetry(tabId);
 
 
@@ -166,7 +158,6 @@ async function runCapture(tabId) {
     });
 
     toast(`已保存：${filename}`);
-    return context;
 
 
 
@@ -1125,240 +1116,4 @@ function scrapeContext() {
     }
     return 0;
   }
-}
-
-function ensureAllAzimuthsChecked() {
-  const labels = Array.from(document.querySelectorAll('.el-checkbox__label'));
-  const targetLabel = labels.find(el => el.textContent.trim().includes('全部方位角'));
-  if (targetLabel) {
-    const checkbox = targetLabel.closest('.el-checkbox');
-    if (checkbox) {
-      const isChecked = checkbox.classList.contains('is-checked') || checkbox.querySelector('.is-checked') || checkbox.querySelector('input:checked');
-      if (!isChecked) {
-        console.log("[QuickShot] All Azimuths not checked. Clicking it now.");
-        checkbox.click();
-        return true;
-      } else {
-        console.log("[QuickShot] All Azimuths is already checked.");
-      }
-    }
-  } else {
-    console.warn("[QuickShot] Could not find All Azimuths checkbox.");
-  }
-  return false;
-}
-
-async function startAutoCapture(tabId) {
-  if (isAutoCapturing) {
-    console.log("[QuickShot] Auto-capture already running");
-    return;
-  }
-  isAutoCapturing = true;
-  console.log("[QuickShot] Starting auto-capture...");
-  try {
-    await autoCaptureLoop(tabId);
-  } catch (error) {
-    console.error("[QuickShot] Auto-capture error:", error);
-  } finally {
-    isAutoCapturing = false;
-    console.log("[QuickShot] Auto-capture stopped");
-  }
-}
-
-function stopAutoCapture() {
-  isAutoCapturing = false;
-  console.log("[QuickShot] Stopping auto-capture...");
-}
-
-async function autoCaptureLoop(tabId) {
-  let imageCount = 0;
-  let lastContext = null;
-  let stuckCount = 0;
-  while (isAutoCapturing) {
-    console.log(`[QuickShot] === Loop ${imageCount + 1} ===`);
-    console.log(`[QuickShot] Capturing image ${imageCount + 1}...`);
-
-    const context = await runCapture(tabId);
-    imageCount++;
-
-    console.log(`[QuickShot] Waiting 2s...`);
-    await sleep(2000);
-
-    let isLast = false;
-    let usedContext = false;
-
-    // Priority 1: Use context (current/total) if available
-    if (context && context.current && context.total) {
-      usedContext = true;
-      if (context.current >= context.total) {
-        isLast = true;
-        console.log(`[QuickShot] Context indicates last image: ${context.current}/${context.total}`);
-      } else {
-        isLast = false;
-        console.log(`[QuickShot] Context indicates more images: ${context.current}/${context.total}`);
-      }
-    }
-
-    // Stuck detection: If current index hasn't changed, we are likely done or stuck
-    // However, we might be tracking the wrong counter (e.g. Parcel count instead of Image count).
-    // So we should NOT stop immediately if the button is still enabled.
-  }
-} else {
-  stuckCount = 0;
-}
-lastContext = context;
-
-// Priority 2: Fallback to DOM check if context is inconclusive and not already flagged as last
-if (!isLast && !usedContext) {
-  const lastResults = await chrome.scripting.executeScript({
-    target: { tabId, allFrames: true },
-    func: checkIfLastImage,
-  });
-  isLast = lastResults.some(r => r.result === true);
-  console.log(`[QuickShot] DOM check Is last?`, isLast);
-}
-
-if (isLast) {
-  console.log("[QuickShot] Reached last image!");
-  break;
-}
-
-console.log(`[QuickShot] Clicking next...`);
-const clickResults = await chrome.scripting.executeScript({
-  target: { tabId, allFrames: true },
-  func: clickNextButton,
-});
-
-// Check if any frame clicked a button
-const clickResult = clickResults.find(r => r.result && r.result !== "none")?.result || "none";
-console.log(`[QuickShot] Click result:`, clickResult);
-
-if (clickResult === "none") {
-  console.warn("[QuickShot] Could not find next button in any frame.");
-  break;
-}
-
-console.log(`[QuickShot] Waiting 1s for toast check...`);
-await sleep(1000);
-
-const toastResults = await chrome.scripting.executeScript({
-  target: { tabId, allFrames: true },
-  func: checkForLastImageToast,
-});
-const toastDetected = toastResults.some(r => r.result === true);
-if (toastDetected) {
-  console.log("[QuickShot] Detected 'Already last image' toast. Stopping.");
-  break;
-}
-
-console.log(`[QuickShot] Waiting 1.5s for load...`);
-await sleep(1500);
-  }
-console.log(`[QuickShot] Completed! Captured ${imageCount} images.`);
-}
-
-function checkForLastImageToast() {
-  if (document.body.innerText.includes("已经是最后一张了")) return true;
-  const toasts = document.querySelectorAll('.el-message__content, .toast, .el-message');
-  for (const toast of toasts) {
-    if (toast.textContent.includes("已经是最后一张") || toast.textContent.includes("Last image")) return true;
-  }
-  return false;
-}
-
-function clickNextButton() {
-  console.log("[QuickShot] Searching for next button...");
-  function isVisible(el) {
-    if (!el) return false;
-    const style = window.getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden') return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  }
-
-  // Priority 1: Standard Carousel Arrow (Element UI)
-  const carouselArrows = document.querySelectorAll('.el-carousel__arrow--right');
-  for (const btn of carouselArrows) {
-    if (isVisible(btn) && !btn.disabled) {
-      console.log("[QuickShot] Clicking .el-carousel__arrow--right");
-      btn.click();
-      return "clicked .el-carousel__arrow--right";
-    }
-  }
-
-  // Priority 2: Text-based search for "下一张" (Next Image) or "Next" or ">"
-  // We prioritize "下一张" as it is most specific to image switching
-  const allButtons = document.querySelectorAll('button, [role="button"], span.btn-next, div.btn-next');
-  for (const btn of allButtons) {
-    if (!isVisible(btn)) continue;
-    const text = (btn.innerText || '').trim();
-    // Exact match or strong inclusion
-    if (text === '下一张' || text === 'Next' || text === '>') {
-      if (!btn.disabled && !btn.classList.contains('is-disabled')) {
-        console.log(`[QuickShot] Clicking button with text "${text}"`);
-        btn.click();
-        return `clicked text "${text}"`;
-      }
-    }
-    // Partial match for "下一张"
-    if (text.includes('下一张')) {
-      if (!btn.disabled && !btn.classList.contains('is-disabled')) {
-        console.log(`[QuickShot] Clicking button containing "下一张"`);
-        btn.click();
-        return `clicked text "${text}"`;
-      }
-    }
-  }
-
-  // Priority 3: Caret Icon (Element UI) - often inside the button
-  const caretIcons = document.querySelectorAll('.el-icon-caret-right, i.el-icon-caret-right');
-  for (const icon of caretIcons) {
-    if (isVisible(icon)) {
-      const button = icon.closest('button') || icon.closest('[role="button"]') || icon.parentElement;
-      if (button && !button.disabled && !button.classList.contains('is-disabled')) {
-        console.log("[QuickShot] Clicking button with caret-right");
-        button.click();
-        return "clicked caret-right";
-      }
-    }
-  }
-
-  // Priority 4: Generic .right-btn (Low priority, as it might be 'Next Project')
-  const rightBtns = document.querySelectorAll('.right-btn, span.right-btn');
-  for (const container of rightBtns) {
-    if (isVisible(container)) {
-      const button = container.querySelector('button') || container;
-      if (button && !button.disabled) {
-        console.log("[QuickShot] Clicking .right-btn");
-        button.click();
-        return "clicked .right-btn";
-      }
-    }
-  }
-
-  console.log("[QuickShot] No next button found");
-  return "none";
-}
-
-function checkIfLastImage() {
-  function isVisible(el) {
-    if (!el) return false;
-    const style = window.getComputedStyle(el);
-    if (style.display === 'none' || style.visibility === 'hidden') return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  }
-
-  if (document.body.innerText.includes("已经是最后一张了")) return true;
-  const toasts = document.querySelectorAll('.el-message__content, .toast');
-  for (const toast of toasts) {
-    if (toast.textContent.includes("已经是最后一张")) return true;
-  }
-  const nextBtns = document.querySelectorAll('.el-carousel__arrow--right, .btn-next, .right-btn');
-  for (const btn of nextBtns) {
-    if (isVisible(btn) && (btn.disabled || btn.classList.contains('is-disabled') || btn.classList.contains('disabled'))) {
-      return true;
-    }
-  }
-  return false;
 }

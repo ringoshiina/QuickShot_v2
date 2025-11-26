@@ -1,0 +1,209 @@
+﻿diff --git a/sw.js b/sw.js
+index e98a885..decbcf3 100644
+--- a/sw.js
++++ b/sw.js
+@@ -9,6 +9,7 @@ const BLANK_RETRY_LIMIT = 3;
+ const BLANK_RETRY_DELAY = 700;
+ const BLANK_THRESHOLD = 0.94;
+ let settingsCache = null;
++let isAutoCapturing = false;
+ 
+ chrome.storage.onChanged.addListener((changes, areaName) => {
+   if (areaName === "sync" && ("outputRoot" in changes)) {
+@@ -16,6 +17,25 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
+   }
+ });
+ 
++chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
++  if (request.action === "getAutoCaptureStatus") {
++    sendResponse({ isAutoCapturing });
++    return true;
++  }
++  if (request.action === "startAutoCapture") {
++    if (request.tabId) {
++      startAutoCapture(request.tabId);
++      sendResponse({ success: true });
++    }
++    return true;
++  }
++  if (request.action === "stopAutoCapture") {
++    stopAutoCapture();
++    sendResponse({ success: true });
++    return true;
++  }
++});
++
+ async function getSettings() {
+   if (settingsCache) return settingsCache;
+   const settings = await readSettingsFromStorage();
+@@ -85,17 +105,33 @@ async function runCapture(tabId) {
+ 
+ 
+   try {
+-    console.log("[QuickShot] Step 1: Getting context...");
++
++
++
+     const ctxEntry = await getCaptureContext(tabId);
+-    console.log("[QuickShot] Step 1: Done.");
++
++
+ 
+     if (!ctxEntry) {
++
++
++
+       toast("鏈瘑鍒埌椤圭洰/鍦板潡缂栧彿鎴栧綋鍓嶅簭鍙凤紙1/N锛夛紝璇风‘璁や綅浜庝妇璇佺収鐗囩殑澶у浘鏌ョ湅鍣?);
++
++
++
+       return;
++
++
++
+     }
+ 
++
++
+     const { context, frameId } = ctxEntry;
++
+     const { parcelId, projectId } = context;
++
+     const settings = await getSettings();
+ 
+     const derivedSequence = resolveSequence(context);
+@@ -116,20 +152,16 @@ async function runCapture(tabId) {
+     const outputRoot = settings.outputRoot || DEFAULT_SETTINGS.outputRoot;
+     const filename = `${outputRoot}/${folder}/${baseName}.png`;
+ 
+-    // Step 2: Ensure "All Azimuths" checkbox is checked
+-    console.log("[QuickShot] Step 2: Checking 'All Azimuths' checkbox...");
+-    await chrome.scripting.executeScript({
+-      target: { tabId, allFrames: true },
+-      func: ensureAllAzimuthsChecked,
+-    });
+-    console.log("[QuickShot] Step 2: Done.");
+ 
+-    console.log("[QuickShot] Step 3: Attaching debugger...");
++
+     await attachDebugger(tabId);
++
++
++
+     debuggerAttached = true;
+-    console.log("[QuickShot] Step 3: Done.");
+ 
+-    console.log("[QuickShot] Step 4: Capturing screenshot...");
++
++
+     const screenshot = await captureScreenshotWithRetry(tabId);
+ 
+ 
+@@ -1107,7 +1139,6 @@ function scrapeContext() {
+ }
+ 
+ function ensureAllAzimuthsChecked() {
+-  // Find the label containing "鍏ㄩ儴鏂逛綅瑙?
+   const labels = Array.from(document.querySelectorAll('.el-checkbox__label'));
+   const targetLabel = labels.find(el => el.textContent.trim().includes('鍏ㄩ儴鏂逛綅瑙?));
+ 
+@@ -1119,15 +1150,96 @@ function ensureAllAzimuthsChecked() {
+         checkbox.querySelector('input:checked');
+ 
+       if (!isChecked) {
+-        console.log("[QuickShot] 'All Azimuths' not checked. Clicking it now.");
++        console.log("[QuickShot] All Azimuths not checked. Clicking it now.");
+         checkbox.click();
+         return true;
+       } else {
+-        console.log("[QuickShot] 'All Azimuths' is already checked.");
++        console.log("[QuickShot] All Azimuths is already checked.");
+       }
+     }
+   } else {
+-    console.warn("[QuickShot] Could not find 'All Azimuths' checkbox.");
++    console.warn("[QuickShot] Could not find All Azimuths checkbox.");
+   }
+   return false;
+ }
++
++async function startAutoCapture(tabId) {
++  if (isAutoCapturing) {
++    console.log("[QuickShot] Auto-capture already running");
++    return;
++  }
++
++  isAutoCapturing = true;
++  console.log("[QuickShot] Starting auto-capture...");
++
++  try {
++    await autoCaptureLoop(tabId);
++  } catch (error) {
++    console.error("[QuickShot] Auto-capture error:", error);
++  } finally {
++    isAutoCapturing = false;
++    console.log("[QuickShot] Auto-capture stopped");
++  }
++}
++
++function stopAutoCapture() {
++  isAutoCapturing = false;
++  function isVisible(el) {
++    if (!el) return false;
++    const style = window.getComputedStyle(el);
++    if (style.display === 'none' || style.visibility === 'hidden') return false;
++    const rect = el.getBoundingClientRect();
++    return rect.width > 0 && rect.height > 0;
++  }
++
++  const rightBtns = document.querySelectorAll('.right-btn, span.right-btn');
++  console.log("[QuickShot] .right-btn:", rightBtns.length);
++
++  for (const container of rightBtns) {
++    if (isVisible(container)) {
++      const button = container.querySelector('button');
++      if (button && !button.disabled) {
++        console.log("[QuickShot] Clicking .right-btn button");
++        button.click();
++        return true;
++      }
++    }
++  }
++
++  const caretIcons = document.querySelectorAll('.el-icon-caret-right, i.el-icon-caret-right');
++  console.log("[QuickShot] caret-right:", caretIcons.length);
++
++  for (const icon of caretIcons) {
++    if (isVisible(icon)) {
++      const button = icon.closest('button');
++      if (button && !button.disabled) {
++        console.log("[QuickShot] Clicking button with caret-right");
++        button.click();
++        return true;
++      }
++    }
++  }
++
++  console.log("[QuickShot] No next button found");
++  return false;
++}
++
++function checkIfLastImage() {
++  if (document.body.innerText.includes("宸茬粡鏄渶鍚庝竴寮犱簡")) {
++    return true;
++  }
++
++  const toasts = document.querySelectorAll('.el-message__content, .toast');
++  for (const toast of toasts) {
++    if (toast.textContent.includes("宸茬粡鏄渶鍚庝竴寮?)) {
++      return true;
++    }
++  }
++
++  const nextBtns = document.querySelectorAll('.el-carousel__arrow--right, .btn-next, .right-btn');
++  for (const btn of nextBtns) {
++    if (btn.disabled) return true;
++  }
++
++  return false;
++}
