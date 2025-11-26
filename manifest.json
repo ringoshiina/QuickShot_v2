@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Landcloud QuickShot",
+  "version": "1.0.8",
+  "description": "\u4e00\u952e\u6574\u9875\u622a\u56fe\uff0c\u5e76\u6309 {\u9879\u76ee\u7f16\u53f7}/{\u5730\u5757\u7f16\u53f7-\u5e8f\u53f7}.png \u547d\u540d\u4fdd\u5b58\u3002",
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "downloads",
+    "tabs",
+    "debugger",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://landcloud.org.cn/*",
+    "https://www.landcloud.org.cn/*",
+    "https://*.landcloud.org.cn/*"
+  ],
+  "action": {
+    "default_title": "QuickShot: \u4e00\u952e\u622a\u56fe",
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "options_page": "options.html",
+  "background": {
+    "service_worker": "sw.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://landcloud.org.cn/*",
+        "https://www.landcloud.org.cn/*",
+        "https://*.landcloud.org.cn/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "commands": {
+    "quickshot": {
+      "suggested_key": {
+        "default": "Alt+Q"
+      },
+      "description": "\u4e00\u952e\u622a\u56fe\u5e76\u6309\u89c4\u5219\u547d\u540d\u4fdd\u5b58"
+    }
+  }
+}
