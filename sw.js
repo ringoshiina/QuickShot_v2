@@ -2,6 +2,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   outputRoot: "F24",
   captureDelay: 2500,
   maxCaptureCount: 0,
+  parcelSwitchDelay: 3500,
 });
 const RATIO_PATTERN = /(\d+)\s*[/／]\s*(\d+)/;
 const INDEX_HINT_PATTERN = /(?:序号|当前|index|sequence)/i;
@@ -57,6 +58,7 @@ function readSettingsFromStorage() {
         outputRoot: sanitizeOutputRoot(items.outputRoot),
         captureDelay: Number.parseInt(items.captureDelay, 10) || 2500,
         maxCaptureCount: Number.parseInt(items.maxCaptureCount, 10) || 0,
+        parcelSwitchDelay: Number.parseInt(items.parcelSwitchDelay, 10) || 3500,
       });
     });
   });
@@ -796,9 +798,9 @@ function scrapeContext() {
       };
       const ratioElements = Array.from(root.querySelectorAll('*')).filter((node) => {
         if (!node || node === root) return false;
-        const text = (node.textContent || '').trim();
-        if (!text || text.length > 40) return false;
-        return ratioPattern.test(text);
+        const nodeText = (node.textContent || '').trim();
+        if (!nodeText || nodeText.length > 40) return false;
+        return ratioPattern.test(nodeText);
       }).slice(0, 5).map((node) => ({
         tag: node.tagName,
         className: node.className || '',
@@ -1064,9 +1066,9 @@ function scrapeContext() {
 
     const ratioElement = Array.from(root.querySelectorAll('*')).find((node) => {
       if (!node || node === root) return false;
-      const text = (node.textContent || '').trim();
-      if (!text || text.length > 40) return false;
-      return ratioPattern.test(text);
+      const nodeText = (node.textContent || '').trim();
+      if (!nodeText || nodeText.length > 40) return false;
+      return ratioPattern.test(nodeText);
     });
     if (ratioElement) {
       const match = (ratioElement.textContent || '').match(ratioPattern);
@@ -1244,8 +1246,20 @@ async function autoCaptureLoop(tabId) {
     }
 
     if (isLast) {
-      console.log("[QuickShot] Reached last image!");
-      break;
+      console.log("[QuickShot] Reached last image! Attempting to switch to next parcel...");
+      const switchSuccess = await switchParcel(tabId, settings.parcelSwitchDelay);
+      if (switchSuccess) {
+        console.log("[QuickShot] Parcel switch initiated. Resetting counters for new parcel.");
+        imageCount = 0;
+        lastContext = null;
+        stuckCount = 0;
+        await sleep(5000);
+        continue;
+      } else {
+        console.log("[QuickShot] Parcel switch failed or no next parcel. Stopping.");
+        await showAlert(tabId, "全部地块已截图完成！");
+        break;
+      }
     }
 
     console.log(`[QuickShot] Clicking next...`);
@@ -1254,7 +1268,6 @@ async function autoCaptureLoop(tabId) {
       func: clickNextButton,
     });
 
-    // Check if any frame clicked a button
     const clickResult = clickResults.find(r => r.result && r.result !== "none")?.result || "none";
     console.log(`[QuickShot] Click result:`, clickResult);
 
@@ -1272,12 +1285,23 @@ async function autoCaptureLoop(tabId) {
     });
     const toastDetected = toastResults.some(r => r.result === true);
     if (toastDetected) {
-      console.log("[QuickShot] Detected 'Already last image' toast. Stopping.");
-      break;
+      console.log("[QuickShot] Detected 'Already last image' toast. Attempting to switch to next parcel...");
+      const switchSuccess = await switchParcel(tabId, settings.parcelSwitchDelay);
+      if (switchSuccess) {
+        console.log("[QuickShot] Parcel switch initiated (via toast). Resetting counters for new parcel.");
+        imageCount = 0;
+        lastContext = null;
+        stuckCount = 0;
+        await sleep(5000);
+        continue;
+      } else {
+        console.log("[QuickShot] Parcel switch failed or no next parcel (via toast). Stopping.");
+        await showAlert(tabId, "全部地块已截图完成！");
+        break;
+      }
     }
 
     console.log(`[QuickShot] Waiting for load...`);
-    // settings is already defined at the start of the loop
     const delay = settings.captureDelay || 2500;
     await sleep(delay);
   }
@@ -1388,4 +1412,86 @@ function checkIfLastImage() {
     }
   }
   return false;
+}
+
+async function switchParcel(tabId, delay) {
+  console.log(`[QuickShot] Switching parcel. Waiting ${delay}ms before clicking next...`);
+
+  // Get current parcel ID before switch
+  const beforeContext = await getCaptureContext(tabId);
+  const beforeParcelId = beforeContext?.context?.parcelId;
+
+  // Step 1: Click "Next Parcel" button
+  const clickNextResult = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: clickNextParcelButton,
+  });
+
+  const clickedNext = clickNextResult.some(r => r.result === true);
+  if (!clickedNext) {
+    console.warn("[QuickShot] Could not find 'Next Parcel' button.");
+    return false;
+  }
+
+  // Step 2: Wait for the specified delay
+  await sleep(delay);
+
+  // Step 3: Click the first thumbnail
+  console.log("[QuickShot] Clicking first thumbnail...");
+  const clickThumbResult = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    func: clickFirstThumbnail,
+  });
+
+  const clickedThumb = clickThumbResult.some(r => r.result === true);
+  if (!clickedThumb) {
+    console.warn("[QuickShot] Could not find 'First Thumbnail'.");
+    return false;
+  }
+
+  // Step 4: Verify if parcel ID changed
+  await sleep(2000); // Wait a bit for DOM update
+  const afterContext = await getCaptureContext(tabId);
+  const afterParcelId = afterContext?.context?.parcelId;
+
+  if (beforeParcelId && afterParcelId && beforeParcelId === afterParcelId) {
+    console.warn(`[QuickShot] Parcel ID did not change (${beforeParcelId} -> ${afterParcelId}). Switch failed.`);
+    return false;
+  }
+
+  return true;
+}
+
+function clickNextParcelButton() {
+  // Selector based on user provided image: div with class "zdkBtn" containing text "下一个"
+  // XPath: //div[contains(@class, "zdkBtn") and contains(., "下一个")]
+  const divs = document.querySelectorAll('div.zdkBtn');
+  for (const div of divs) {
+    if (div.textContent.includes("下一个")) {
+      console.log("[QuickShot] Clicking Next Parcel button");
+      div.click();
+      return true;
+    }
+  }
+  return false;
+}
+
+function clickFirstThumbnail() {
+  // Selector based on user provided image: .demo-image__preview img
+  // We want the first one.
+  const img = document.querySelector('.demo-image__preview img');
+  if (img) {
+    console.log("[QuickShot] Clicking first thumbnail");
+    img.click();
+    return true;
+  }
+  return false;
+}
+
+async function showAlert(tabId, message) {
+  await chrome.scripting.executeScript({
+    target: { tabId, allFrames: false },
+    func: (msg) => { alert(msg); },
+    args: [message]
+  });
 }

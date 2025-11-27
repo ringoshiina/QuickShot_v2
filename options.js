@@ -1,6 +1,7 @@
 const DEFAULT_OUTPUT_ROOT = "F24";
 const DEFAULT_CAPTURE_DELAY = 2500;
 const DEFAULT_MAX_CAPTURE_COUNT = 0;
+const DEFAULT_PARCEL_SWITCH_DELAY = 3500;
 const INVALID_SEGMENT_CHARS = /[<>:"\\/|?*\r\n]+/g;
 
 function sanitizeRootInput(raw) {
@@ -31,16 +32,18 @@ function showStatus(element, message, isError = false) {
 document.addEventListener("DOMContentLoaded", () => {
   const rootInput = document.getElementById("output-root");
   const delayInput = document.getElementById("capture-delay");
+  const parcelSwitchDelayInput = document.getElementById("parcel-switch-delay");
   const maxCountInput = document.getElementById("max-capture-count");
   const statusEl = document.getElementById("status");
   const form = document.getElementById("settings-form");
   const shortcutsBtn = document.getElementById("open-shortcuts");
   const openOptionsBtn = document.getElementById("open-options");
 
-  chrome.storage.sync.get({ 
-    outputRoot: DEFAULT_OUTPUT_ROOT, 
+  chrome.storage.sync.get({
+    outputRoot: DEFAULT_OUTPUT_ROOT,
     captureDelay: DEFAULT_CAPTURE_DELAY,
-    maxCaptureCount: DEFAULT_MAX_CAPTURE_COUNT 
+    maxCaptureCount: DEFAULT_MAX_CAPTURE_COUNT,
+    parcelSwitchDelay: DEFAULT_PARCEL_SWITCH_DELAY
   }, (items) => {
     if (chrome.runtime.lastError) {
       showStatus(statusEl, "读取设置失败", true);
@@ -49,6 +52,9 @@ document.addEventListener("DOMContentLoaded", () => {
     rootInput.value = sanitizeRootInput(items.outputRoot || DEFAULT_OUTPUT_ROOT);
     if (delayInput) {
       delayInput.value = items.captureDelay || DEFAULT_CAPTURE_DELAY;
+    }
+    if (parcelSwitchDelayInput) {
+      parcelSwitchDelayInput.value = items.parcelSwitchDelay || DEFAULT_PARCEL_SWITCH_DELAY;
     }
     if (maxCountInput) {
       maxCountInput.value = items.maxCaptureCount || DEFAULT_MAX_CAPTURE_COUNT;
@@ -62,15 +68,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if (Number.isNaN(delay) || delay < 500) {
       delay = DEFAULT_CAPTURE_DELAY;
     }
+    let parcelSwitchDelay = parseInt(parcelSwitchDelayInput.value, 10);
+    if (Number.isNaN(parcelSwitchDelay) || parcelSwitchDelay < 1000) {
+      parcelSwitchDelay = DEFAULT_PARCEL_SWITCH_DELAY;
+    }
     let maxCount = parseInt(maxCountInput.value, 10);
     if (Number.isNaN(maxCount) || maxCount < 0) {
       maxCount = DEFAULT_MAX_CAPTURE_COUNT;
     }
 
-    chrome.storage.sync.set({ 
-      outputRoot: sanitized, 
+    chrome.storage.sync.set({
+      outputRoot: sanitized,
       captureDelay: delay,
-      maxCaptureCount: maxCount 
+      maxCaptureCount: maxCount,
+      parcelSwitchDelay: parcelSwitchDelay
     }, () => {
       if (chrome.runtime.lastError) {
         showStatus(statusEl, "保存失败：" + chrome.runtime.lastError.message, true);
@@ -78,6 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       rootInput.value = sanitized;
       delayInput.value = delay;
+      parcelSwitchDelayInput.value = parcelSwitchDelay;
       maxCountInput.value = maxCount;
       showStatus(statusEl, "设置已保存");
       setTimeout(() => showStatus(statusEl, ""), 2500);
