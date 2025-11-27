@@ -1,6 +1,7 @@
 const DEFAULT_SETTINGS = Object.freeze({
   outputRoot: "F24",
   captureDelay: 2500,
+  maxCaptureCount: 0,
 });
 const RATIO_PATTERN = /(\d+)\s*[/／]\s*(\d+)/;
 const INDEX_HINT_PATTERN = /(?:序号|当前|index|sequence)/i;
@@ -55,6 +56,7 @@ function readSettingsFromStorage() {
       resolve({
         outputRoot: sanitizeOutputRoot(items.outputRoot),
         captureDelay: Number.parseInt(items.captureDelay, 10) || 2500,
+        maxCaptureCount: Number.parseInt(items.maxCaptureCount, 10) || 0,
       });
     });
   });
@@ -1178,6 +1180,14 @@ async function autoCaptureLoop(tabId) {
   let stuckCount = 0;
   while (isAutoCapturing) {
     console.log(`[QuickShot] === Loop ${imageCount + 1} ===`);
+
+    // Check max capture count
+    const settings = await getSettings();
+    if (settings.maxCaptureCount > 0 && imageCount >= settings.maxCaptureCount) {
+      console.log(`[QuickShot] Reached max capture count (${settings.maxCaptureCount}). Stopping.`);
+      break;
+    }
+
     console.log(`[QuickShot] Capturing image ${imageCount + 1}...`);
 
     const context = await runCapture(tabId);
@@ -1267,7 +1277,7 @@ async function autoCaptureLoop(tabId) {
     }
 
     console.log(`[QuickShot] Waiting for load...`);
-    const settings = await getSettings();
+    // settings is already defined at the start of the loop
     const delay = settings.captureDelay || 2500;
     await sleep(delay);
   }

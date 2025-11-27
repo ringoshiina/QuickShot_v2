@@ -1,5 +1,6 @@
 const DEFAULT_OUTPUT_ROOT = "F24";
 const DEFAULT_CAPTURE_DELAY = 2500;
+const DEFAULT_MAX_CAPTURE_COUNT = 0;
 const INVALID_SEGMENT_CHARS = /[<>:"\\/|?*\r\n]+/g;
 
 function sanitizeRootInput(raw) {
@@ -30,12 +31,17 @@ function showStatus(element, message, isError = false) {
 document.addEventListener("DOMContentLoaded", () => {
   const rootInput = document.getElementById("output-root");
   const delayInput = document.getElementById("capture-delay");
+  const maxCountInput = document.getElementById("max-capture-count");
   const statusEl = document.getElementById("status");
   const form = document.getElementById("settings-form");
   const shortcutsBtn = document.getElementById("open-shortcuts");
   const openOptionsBtn = document.getElementById("open-options");
 
-  chrome.storage.sync.get({ outputRoot: DEFAULT_OUTPUT_ROOT, captureDelay: DEFAULT_CAPTURE_DELAY }, (items) => {
+  chrome.storage.sync.get({ 
+    outputRoot: DEFAULT_OUTPUT_ROOT, 
+    captureDelay: DEFAULT_CAPTURE_DELAY,
+    maxCaptureCount: DEFAULT_MAX_CAPTURE_COUNT 
+  }, (items) => {
     if (chrome.runtime.lastError) {
       showStatus(statusEl, "读取设置失败", true);
       return;
@@ -43,6 +49,9 @@ document.addEventListener("DOMContentLoaded", () => {
     rootInput.value = sanitizeRootInput(items.outputRoot || DEFAULT_OUTPUT_ROOT);
     if (delayInput) {
       delayInput.value = items.captureDelay || DEFAULT_CAPTURE_DELAY;
+    }
+    if (maxCountInput) {
+      maxCountInput.value = items.maxCaptureCount || DEFAULT_MAX_CAPTURE_COUNT;
     }
   });
 
@@ -53,14 +62,23 @@ document.addEventListener("DOMContentLoaded", () => {
     if (Number.isNaN(delay) || delay < 500) {
       delay = DEFAULT_CAPTURE_DELAY;
     }
+    let maxCount = parseInt(maxCountInput.value, 10);
+    if (Number.isNaN(maxCount) || maxCount < 0) {
+      maxCount = DEFAULT_MAX_CAPTURE_COUNT;
+    }
 
-    chrome.storage.sync.set({ outputRoot: sanitized, captureDelay: delay }, () => {
+    chrome.storage.sync.set({ 
+      outputRoot: sanitized, 
+      captureDelay: delay,
+      maxCaptureCount: maxCount 
+    }, () => {
       if (chrome.runtime.lastError) {
         showStatus(statusEl, "保存失败：" + chrome.runtime.lastError.message, true);
         return;
       }
       rootInput.value = sanitized;
       delayInput.value = delay;
+      maxCountInput.value = maxCount;
       showStatus(statusEl, "设置已保存");
       setTimeout(() => showStatus(statusEl, ""), 2500);
     });

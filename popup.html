@@ -78,6 +78,10 @@
       切换等待时长 (毫秒)
       <input id="capture-delay" type="number" placeholder="默认：2500" min="500" step="100" />
     </label>
+    <label for="max-capture-count">
+      连拍上限 (张)
+      <input id="max-capture-count" type="number" placeholder="0 表示不限" min="0" />
+    </label>
     <p class="hint">保存在浏览器默认下载目录下，可输入多级子目录（用 / 或 \\ 分隔）。</p>
     <button type="submit">保存设置</button>
     <div id="status"></div>
