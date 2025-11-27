@@ -729,8 +729,8 @@ function scrapeContext() {
   const ratioPattern = /(\d+)\s*[/\uFF0F]\s*(\d+)/;
   const ratioPatternGlobal = /(\d+)\s*[/\uFF0F]\s*(\d+)/g;
   const indexHintPattern = /(?:\u5e8f\u53f7|\u5f53\u524d|index|sequence)/i;
-  const parcelPattern = /[A-Z]{1,2}\d{2}[A-Z0-9]+-\d+/;
-  const parcelPatternGlobal = /[A-Z]{1,2}\d{2}[A-Z0-9]+-\d+/g;
+  const parcelPattern = /[A-Z]{1,2}\d{2}[A-Z0-9]+(?:-\d+)+/;
+  const parcelPatternGlobal = /[A-Z]{1,2}\d{2}[A-Z0-9]+(?:-\d+)+/g;
   const projectPattern = /\b[A-Z]{1,2}\d{2}[A-Z0-9]+\b/;
   try {
     const contexts = [];
